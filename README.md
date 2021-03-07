@@ -1,4 +1,4 @@
-# Vitamin [![Build Status][travis status]][travis]
+# Vitamin [![Build Status](https://travis-ci.com/IvanMacek/vitamin.svg?branch=main)](https://travis-ci.com/IvanMacek/vitamin)
 
 Supposed to be a 3D FPS Game Engine but let's see if any of that becomes true.
 
