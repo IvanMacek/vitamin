@@ -4,9 +4,17 @@ Supposed to be a 3D FPS Game Engine but let's see if any of that really happens.
 
 ## Tool dependencies
 
+Required:
+
     choco install winlibs
     choco install cmake
     choco install conan 
+
+Optional:
+
+    choco install vulkan-sdk
+    choco install renderdoc
+
 
 ## Build
 
