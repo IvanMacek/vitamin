@@ -1,4 +1,9 @@
 language: cpp
+
+addons:
+  apt:
+   packages:
+   - libgl1-mesa-dev
   
 before_install:
   - pushd ${HOME}
