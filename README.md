@@ -20,6 +20,7 @@ Optional:
 
 Build is assumed to be executed from the _build_ directory:
 
+    mkdir build
     cd build
 
 JFrog Conan is used for package managment. You can install all the packages by running:
