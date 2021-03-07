@@ -1,9 +1,6 @@
 language: cpp
-
-compiler:
-  - clang
   
- before_install:
+before_install:
   - pushd ${HOME}
   - wget https://github.com/llvm/llvm-project/releases/download/llvmorg-11.1.0/clang+llvm-11.1.0-x86_64-linux-gnu-ubuntu-16.04.tar.xz
   - wget https://github.com/Kitware/CMake/releases/download/v3.19.1/cmake-3.19.1-Linux-x86_64.tar.gz
