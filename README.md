@@ -10,15 +10,18 @@ Supposed to be a 3D FPS Game Engine but let's see if any of that really happens.
 
 ## Build
 
-All of the build commands are 
+Build is assumed to be executed from the _build_ directory:
+
+    cd build
 
 JFrog Conan is used for package managment. You can install all the packages by running:
 
-    cd build
     conan install .. --build=missing
 
-## Build
+Generate cmake build project:
 
-    cd build
     cmake .. -G "Unix Makefiles" -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
+
+Run the build:
+   
     make
