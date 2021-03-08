@@ -110,7 +110,7 @@ class HelloTriangleApplication {
 
         cout << "Available GPUs:\n";
 
-        multimap<uint32_t, tuple<VkPhysicalDevice, VkPhysicalDeviceProperties, VkPhysicalDeviceFeatures>, greater<int>> devicePreferenceMap;
+        multimap<int32_t, tuple<VkPhysicalDevice, VkPhysicalDeviceProperties, VkPhysicalDeviceFeatures>, greater<int>> devicePreferenceMap;
 
         for (const auto &device : devices) {
             VkPhysicalDeviceProperties deviceProperties;
@@ -119,12 +119,17 @@ class HelloTriangleApplication {
             VkPhysicalDeviceFeatures deviceFeatures;
             vkGetPhysicalDeviceFeatures(device, &deviceFeatures);
 
-            uint32_t score = 0;
+            QueueFamilyIndices queueFamilyIndices = findQueueFamilies(device);
+
+            int32_t score = 0;
 
             if (deviceProperties.deviceType == VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU) {
                 score += 1000;
             }
 
+            if (!queueFamilyIndices.graphicsFamily.has_value()) {
+                score = -1;
+            }
             if (!deviceFeatures.geometryShader || !deviceFeatures.tessellationShader) {
                 score = -1;
             }
@@ -132,11 +137,13 @@ class HelloTriangleApplication {
             devicePreferenceMap.insert(make_pair(score, make_tuple(device, deviceProperties, deviceFeatures)));
         }
 
+        VkPhysicalDevice selectedPhysicalDevice = VK_NULL_HANDLE;
         bool isTopChoice = true;
         for (const auto &[score, mapValue] : devicePreferenceMap) {
             const auto &[device, props, features] = mapValue;
 
             if (score >= 0 && isTopChoice) {
+                selectedPhysicalDevice = device;
                 cout << '*';
                 isTopChoice = false;
             }
@@ -204,6 +211,31 @@ class HelloTriangleApplication {
         }
 
         return !isRequiredLayerMissing;
+    }
+
+    struct QueueFamilyIndices {
+        std::optional<uint32_t> graphicsFamily;
+    };
+
+    QueueFamilyIndices findQueueFamilies(VkPhysicalDevice device) {
+        QueueFamilyIndices indices;
+
+        uint32_t queueFamilyCount = 0;
+        vkGetPhysicalDeviceQueueFamilyProperties(device, &queueFamilyCount, nullptr);
+
+        std::vector<VkQueueFamilyProperties> queueFamilies(queueFamilyCount);
+        vkGetPhysicalDeviceQueueFamilyProperties(device, &queueFamilyCount, queueFamilies.data());
+
+        int i = 0;
+        for (const auto &queueFamily : queueFamilies) {
+            if (queueFamily.queueFlags & VK_QUEUE_GRAPHICS_BIT) {
+                indices.graphicsFamily = i;
+            }
+
+            i++;
+        }
+
+        return indices;
     }
 };
 

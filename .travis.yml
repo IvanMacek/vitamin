@@ -15,6 +15,8 @@ install:
   - pushd ${HOME}
   - tar -xf clang+llvm-11.1.0-x86_64-linux-gnu-ubuntu-16.04.tar.xz
   - export PATH="${PWD}/clang+llvm-11.1.0-x86_64-linux-gnu-ubuntu-16.04/bin:${PATH}"
+  - export CC="${PWD}/clang+llvm-11.1.0-x86_64-linux-gnu-ubuntu-16.04/bin/clang"
+  - export CXX="${PWD}/clang+llvm-11.1.0-x86_64-linux-gnu-ubuntu-16.04/bin/clang++"
   - tar -xf cmake-3.19.1-Linux-x86_64.tar.gz
   - export PATH="${PWD}/cmake-3.19.1-Linux-x86_64/bin:${PATH}"
   - popd
@@ -24,7 +26,7 @@ before_script:
   - mkdir build
   - cd build
   - conan install .. --build=missing
-  - cmake .. -DCMAKE_C_COMPILER:FILEPATH="${PWD}/clang+llvm-11.1.0-x86_64-linux-gnu-ubuntu-16.04/bin/clang" -DCMAKE_CXX_COMPILER:FILEPATH="${PWD}/clang+llvm-11.1.0-x86_64-linux-gnu-ubuntu-16.04/bin/clang++"
+  - cmake ..
   
 script:
   - make
