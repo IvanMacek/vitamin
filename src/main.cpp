@@ -10,6 +10,7 @@
 #include <iostream>
 #include <map>
 #include <optional>
+#include <set>
 #include <stdexcept>
 #include <tuple>
 #include <vector>
@@ -19,7 +20,7 @@ using namespace std;
 const uint32_t WINDOW_WIDTH = 800;
 const uint32_t WINDOW_HEIGHT = 600;
 
-const std::vector<const char *> VALIDATION_LAYERS = {"VK_LAYER_KHRONOS_validation"};
+const vector<const char *> VALIDATION_LAYERS = {"VK_LAYER_KHRONOS_validation"};
 
 #ifdef NDEBUG
 [[maybe_unused]] const bool ENABLE_VALIDATION_LAYERS = false;
@@ -41,7 +42,9 @@ class Vitamin {
     VkInstance instance;
     VkPhysicalDevice physicalDevice = VK_NULL_HANDLE;
     VkDevice logicalDevice;
+    VkSurfaceKHR surface;
     VkQueue graphicsQueue;
+    VkQueue presentQueue;
 
     void initWindow() {
         glfwInit();
@@ -54,6 +57,7 @@ class Vitamin {
 
     void initVulkan() {
         createInstance();
+        createSurface();
         pickAndPrintPhysicalDevices();
         createLogicalDevice();
     }
@@ -66,6 +70,7 @@ class Vitamin {
 
     void cleanup() {
         vkDestroyDevice(logicalDevice, nullptr);
+        vkDestroySurfaceKHR(instance, surface, nullptr);
         vkDestroyInstance(instance, nullptr);
         glfwDestroyWindow(window);
         glfwTerminate();
@@ -94,7 +99,7 @@ class Vitamin {
                 createInfo.enabledLayerCount = static_cast<uint32_t>(VALIDATION_LAYERS.size());
                 createInfo.ppEnabledLayerNames = VALIDATION_LAYERS.data();
             } else {
-                throw std::runtime_error("Validation layers requested, but some are not available!");
+                throw runtime_error("Validation layers requested, but some are not available!");
             }
         }
 
@@ -108,10 +113,10 @@ class Vitamin {
         vkEnumeratePhysicalDevices(instance, &deviceCount, nullptr);
 
         if (deviceCount == 0) {
-            throw std::runtime_error("Failed to find any GPUs with Vulkan support!");
+            throw runtime_error("Failed to find any GPUs with Vulkan support!");
         }
 
-        std::vector<VkPhysicalDevice> devices(deviceCount);
+        vector<VkPhysicalDevice> devices(deviceCount);
         vkEnumeratePhysicalDevices(instance, &deviceCount, devices.data());
 
         cout << "Available GPUs:\n";
@@ -133,7 +138,7 @@ class Vitamin {
                 score += 1000;
             }
 
-            if (!queueFamilyIndices.graphicsFamily.has_value()) {
+            if (!queueFamilyIndices.isComplete()) {
                 score = -1;
             }
             if (!deviceFeatures.geometryShader || !deviceFeatures.tessellationShader) {
@@ -157,23 +162,30 @@ class Vitamin {
         }
 
         if (physicalDevice == VK_NULL_HANDLE) {
-            throw std::runtime_error("Failed to find a suitable GPU!");
+            throw runtime_error("Failed to find a suitable GPU!");
         }
     }
 
     void createLogicalDevice() {
         QueueFamilyIndices queueFamilyIndices = findQueueFamilies(physicalDevice);
+
+        vector<VkDeviceQueueCreateInfo> queueCreateInfos;
+        set<uint32_t> uniqueQueueFamilies = {queueFamilyIndices.graphicsFamily.value(), queueFamilyIndices.presentFamily.value()};
+
         float queuePriority = 1.0f;
-        VkDeviceQueueCreateInfo queueCreateInfo{.sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO,
-                                                .queueFamilyIndex = queueFamilyIndices.graphicsFamily.value(),
-                                                .queueCount = 1,
-                                                .pQueuePriorities = &queuePriority};
+        for (uint32_t queueFamily : uniqueQueueFamilies) {
+            VkDeviceQueueCreateInfo queueCreateInfo{.sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO,
+                                                    .queueFamilyIndex = queueFamily,
+                                                    .queueCount = 1,
+                                                    .pQueuePriorities = &queuePriority};
+            queueCreateInfos.push_back(queueCreateInfo);
+        }
 
         VkPhysicalDeviceFeatures deviceFeatures{};
 
         VkDeviceCreateInfo createInfo{.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO,
-                                      .queueCreateInfoCount = 1,
-                                      .pQueueCreateInfos = &queueCreateInfo,
+                                      .queueCreateInfoCount = static_cast<uint32_t>(queueCreateInfos.size()),
+                                      .pQueueCreateInfos = queueCreateInfos.data(),
                                       .enabledExtensionCount = 0,
                                       .pEnabledFeatures = &deviceFeatures};
 
@@ -183,10 +195,11 @@ class Vitamin {
         }
 
         if (vkCreateDevice(physicalDevice, &createInfo, nullptr, &logicalDevice) != VK_SUCCESS) {
-            throw std::runtime_error("failed to create logical device!");
+            throw runtime_error("failed to create logical device!");
         }
 
         vkGetDeviceQueue(logicalDevice, queueFamilyIndices.graphicsFamily.value(), 0, &graphicsQueue);
+        vkGetDeviceQueue(logicalDevice, queueFamilyIndices.presentFamily.value(), 0, &presentQueue);
     }
 
     void printVulkanExtensions(const char **requiredExtensions, uint32_t requiredExtensionCount) {
@@ -217,11 +230,11 @@ class Vitamin {
         }
     }
 
-    bool checkAndPrintValidationLayerSupport(const std::vector<const char *> requiredValidationLayers) {
+    bool checkAndPrintValidationLayerSupport(const vector<const char *> requiredValidationLayers) {
         uint32_t layerCount;
         vkEnumerateInstanceLayerProperties(&layerCount, nullptr);
 
-        std::vector<VkLayerProperties> availableLayers(layerCount);
+        vector<VkLayerProperties> availableLayers(layerCount);
         vkEnumerateInstanceLayerProperties(&layerCount, availableLayers.data());
 
         cout << "Required Vulkan validation layers:\n";
@@ -252,6 +265,9 @@ class Vitamin {
 
     struct QueueFamilyIndices {
         optional<uint32_t> graphicsFamily;
+        optional<uint32_t> presentFamily;
+
+        bool isComplete() { return graphicsFamily.has_value() && presentFamily.has_value(); }
     };
 
     QueueFamilyIndices findQueueFamilies(VkPhysicalDevice device) {
@@ -260,7 +276,7 @@ class Vitamin {
         uint32_t queueFamilyCount = 0;
         vkGetPhysicalDeviceQueueFamilyProperties(device, &queueFamilyCount, nullptr);
 
-        std::vector<VkQueueFamilyProperties> queueFamilies(queueFamilyCount);
+        vector<VkQueueFamilyProperties> queueFamilies(queueFamilyCount);
         vkGetPhysicalDeviceQueueFamilyProperties(device, &queueFamilyCount, queueFamilies.data());
 
         int i = 0;
@@ -269,10 +285,22 @@ class Vitamin {
                 indices.graphicsFamily = i;
             }
 
+            VkBool32 presentSupport = false;
+            vkGetPhysicalDeviceSurfaceSupportKHR(device, i, surface, &presentSupport);
+            if (presentSupport) {
+                indices.presentFamily = i;
+            }
+
             i++;
         }
 
         return indices;
+    }
+
+    void createSurface() {
+        if (glfwCreateWindowSurface(instance, window, nullptr, &surface) != VK_SUCCESS) {
+            throw runtime_error("Failed to create window surface!");
+        }
     }
 };
 
