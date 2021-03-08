@@ -4,7 +4,7 @@ addons:
   apt:
    packages:
    - libgl1-mesa-dev
-  
+
 before_install:
   - pushd ${HOME}
   - wget https://github.com/llvm/llvm-project/releases/download/llvmorg-11.1.0/clang+llvm-11.1.0-x86_64-linux-gnu-ubuntu-16.04.tar.xz
@@ -24,7 +24,7 @@ before_script:
   - mkdir build
   - cd build
   - conan install .. --build=missing
-  - cmake ..
+  - cmake .. -DCMAKE_C_COMPILER:FILEPATH="${PWD}/clang+llvm-11.1.0-x86_64-linux-gnu-ubuntu-16.04/bin/clang" -DCMAKE_CXX_COMPILER:FILEPATH="${PWD}/clang+llvm-11.1.0-x86_64-linux-gnu-ubuntu-16.04/bin/clang++"
   
 script:
   - make

@@ -1,3 +1,5 @@
+#include "vulkan/vulkan_core.h"
+#include <stdint.h>
 #define GLFW_INCLUDE_VULKAN
 #include <GLFW/glfw3.h>
 #include <algorithm>
@@ -6,7 +8,9 @@
 #include <cstdlib>
 #include <cstring>
 #include <iostream>
+#include <map>
 #include <stdexcept>
+#include <tuple>
 #include <vector>
 
 using namespace std;
@@ -44,7 +48,10 @@ class HelloTriangleApplication {
         window = glfwCreateWindow(WINDOW_WIDTH, WINDOW_HEIGHT, "Vitamin", nullptr, nullptr);
     }
 
-    void initVulkan() { createInstance(); }
+    void initVulkan() {
+        createInstance();
+        pickAndPrintPhysicalDevices();
+    }
 
     void mainLoop() {
         while (!glfwWindowShouldClose(window)) {
@@ -90,6 +97,54 @@ class HelloTriangleApplication {
         }
     }
 
+    void pickAndPrintPhysicalDevices() {
+        uint32_t deviceCount = 0;
+        vkEnumeratePhysicalDevices(instance, &deviceCount, nullptr);
+
+        if (deviceCount == 0) {
+            throw std::runtime_error("Failed to find any GPUs with Vulkan support!");
+        }
+
+        std::vector<VkPhysicalDevice> devices(deviceCount);
+        vkEnumeratePhysicalDevices(instance, &deviceCount, devices.data());
+
+        cout << "Available GPUs:\n";
+
+        multimap<uint32_t, tuple<VkPhysicalDevice, VkPhysicalDeviceProperties, VkPhysicalDeviceFeatures>, greater<int>> devicePreferenceMap;
+
+        for (const auto &device : devices) {
+            VkPhysicalDeviceProperties deviceProperties;
+            vkGetPhysicalDeviceProperties(device, &deviceProperties);
+
+            VkPhysicalDeviceFeatures deviceFeatures;
+            vkGetPhysicalDeviceFeatures(device, &deviceFeatures);
+
+            uint32_t score = 0;
+
+            if (deviceProperties.deviceType == VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU) {
+                score += 1000;
+            }
+
+            if (!deviceFeatures.geometryShader || !deviceFeatures.tessellationShader) {
+                score = -1;
+            }
+
+            devicePreferenceMap.insert(make_pair(score, make_tuple(device, deviceProperties, deviceFeatures)));
+        }
+
+        bool isTopChoice = true;
+        for (const auto &[score, mapValue] : devicePreferenceMap) {
+            const auto &[device, props, features] = mapValue;
+
+            if (score >= 0 && isTopChoice) {
+                cout << '*';
+                isTopChoice = false;
+            }
+
+            cout << '\t' << score << '\t' << props.deviceID << ' ' << props.deviceName << ' ' << props.deviceType << '\n';
+        }
+    }
+
     void printVulkanExtensions(const char **requiredExtensions, uint32_t requiredExtensionCount) {
         uint32_t extensionCount = 0;
         vkEnumerateInstanceExtensionProperties(nullptr, &extensionCount, nullptr);
@@ -100,7 +155,7 @@ class HelloTriangleApplication {
         cout << "Required Vulkan extensions:\n";
 
         for (uint32_t i = 0; i < requiredExtensionCount; ++i) {
-            auto exists = find_if(begin(extensions), end(extensions), [&](const auto &element) {
+            bool exists = find_if(begin(extensions), end(extensions), [&](const auto &element) {
                               return strcmp(element.extensionName, requiredExtensions[i]) == 0;
                           }) != end(extensions);
 
@@ -129,7 +184,7 @@ class HelloTriangleApplication {
 
         bool isRequiredLayerMissing = false;
         for (const auto &requiredLayer : requiredValidationLayers) {
-            auto exists = find_if(begin(availableLayers), end(availableLayers), [&](const auto &element) {
+            bool exists = find_if(begin(availableLayers), end(availableLayers), [&](const auto &element) {
                               return strcmp(element.layerName, requiredLayer) == 0;
                           }) != end(availableLayers);
 
