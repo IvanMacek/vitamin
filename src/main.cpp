@@ -9,6 +9,7 @@
 #include <cstring>
 #include <iostream>
 #include <map>
+#include <optional>
 #include <stdexcept>
 #include <tuple>
 #include <vector>
@@ -26,7 +27,7 @@ const std::vector<const char *> VALIDATION_LAYERS = {"VK_LAYER_KHRONOS_validatio
 [[maybe_unused]] const bool ENABLE_VALIDATION_LAYERS = true;
 #endif
 
-class HelloTriangleApplication {
+class Vitamin {
   public:
     void run() {
         initWindow();
@@ -38,6 +39,9 @@ class HelloTriangleApplication {
   private:
     GLFWwindow *window;
     VkInstance instance;
+    VkPhysicalDevice physicalDevice = VK_NULL_HANDLE;
+    VkDevice logicalDevice;
+    VkQueue graphicsQueue;
 
     void initWindow() {
         glfwInit();
@@ -51,6 +55,7 @@ class HelloTriangleApplication {
     void initVulkan() {
         createInstance();
         pickAndPrintPhysicalDevices();
+        createLogicalDevice();
     }
 
     void mainLoop() {
@@ -60,6 +65,7 @@ class HelloTriangleApplication {
     }
 
     void cleanup() {
+        vkDestroyDevice(logicalDevice, nullptr);
         vkDestroyInstance(instance, nullptr);
         glfwDestroyWindow(window);
         glfwTerminate();
@@ -137,19 +143,50 @@ class HelloTriangleApplication {
             devicePreferenceMap.insert(make_pair(score, make_tuple(device, deviceProperties, deviceFeatures)));
         }
 
-        VkPhysicalDevice selectedPhysicalDevice = VK_NULL_HANDLE;
         bool isTopChoice = true;
         for (const auto &[score, mapValue] : devicePreferenceMap) {
             const auto &[device, props, features] = mapValue;
 
             if (score >= 0 && isTopChoice) {
-                selectedPhysicalDevice = device;
+                physicalDevice = device;
                 cout << '*';
                 isTopChoice = false;
             }
 
             cout << '\t' << score << '\t' << props.deviceID << ' ' << props.deviceName << ' ' << props.deviceType << '\n';
         }
+
+        if (physicalDevice == VK_NULL_HANDLE) {
+            throw std::runtime_error("Failed to find a suitable GPU!");
+        }
+    }
+
+    void createLogicalDevice() {
+        QueueFamilyIndices queueFamilyIndices = findQueueFamilies(physicalDevice);
+        float queuePriority = 1.0f;
+        VkDeviceQueueCreateInfo queueCreateInfo{.sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO,
+                                                .queueFamilyIndex = queueFamilyIndices.graphicsFamily.value(),
+                                                .queueCount = 1,
+                                                .pQueuePriorities = &queuePriority};
+
+        VkPhysicalDeviceFeatures deviceFeatures{};
+
+        VkDeviceCreateInfo createInfo{.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO,
+                                      .queueCreateInfoCount = 1,
+                                      .pQueueCreateInfos = &queueCreateInfo,
+                                      .enabledExtensionCount = 0,
+                                      .pEnabledFeatures = &deviceFeatures};
+
+        if (ENABLE_VALIDATION_LAYERS) {
+            createInfo.enabledLayerCount = static_cast<uint32_t>(VALIDATION_LAYERS.size());
+            createInfo.ppEnabledLayerNames = VALIDATION_LAYERS.data();
+        }
+
+        if (vkCreateDevice(physicalDevice, &createInfo, nullptr, &logicalDevice) != VK_SUCCESS) {
+            throw std::runtime_error("failed to create logical device!");
+        }
+
+        vkGetDeviceQueue(logicalDevice, queueFamilyIndices.graphicsFamily.value(), 0, &graphicsQueue);
     }
 
     void printVulkanExtensions(const char **requiredExtensions, uint32_t requiredExtensionCount) {
@@ -214,7 +251,7 @@ class HelloTriangleApplication {
     }
 
     struct QueueFamilyIndices {
-        std::optional<uint32_t> graphicsFamily;
+        optional<uint32_t> graphicsFamily;
     };
 
     QueueFamilyIndices findQueueFamilies(VkPhysicalDevice device) {
@@ -240,7 +277,7 @@ class HelloTriangleApplication {
 };
 
 int main() {
-    HelloTriangleApplication app;
+    Vitamin app;
 
     try {
         app.run();
