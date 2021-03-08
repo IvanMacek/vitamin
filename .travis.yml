@@ -17,6 +17,8 @@ install:
   - export PATH="${PWD}/clang+llvm-11.1.0-x86_64-linux-gnu-ubuntu-16.04/bin:${PATH}"
   - export CC="${PWD}/clang+llvm-11.1.0-x86_64-linux-gnu-ubuntu-16.04/bin/clang"
   - export CXX="${PWD}/clang+llvm-11.1.0-x86_64-linux-gnu-ubuntu-16.04/bin/clang++"
+  - export CPLUS_INCLUDE_PATH="${PWD}/clang+llvm-11.1.0-x86_64-linux-gnu-ubuntu-16.04/include:$CPLUS_INCLUDE_PATH"
+  - export LIBRARY_PATH="${PWD}/clang+llvm-11.1.0-x86_64-linux-gnu-ubuntu-16.04/lib:$LIBRARY_PATH"
   - tar -xf cmake-3.19.1-Linux-x86_64.tar.gz
   - export PATH="${PWD}/cmake-3.19.1-Linux-x86_64/bin:${PATH}"
   - popd
