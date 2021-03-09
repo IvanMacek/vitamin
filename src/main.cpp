@@ -1,13 +1,13 @@
-#include "vulkan/vulkan_core.h"
-#include <stdint.h>
 #define GLFW_INCLUDE_VULKAN
-#include <GLFW/glfw3.h>
-#include <algorithm>
-#include <iterator>
+#include "GLFW/glfw3.h"
+#include "vulkan/vulkan_core.h"
 
+#include <algorithm>
+#include <cstdint>
 #include <cstdlib>
 #include <cstring>
 #include <iostream>
+#include <iterator>
 #include <map>
 #include <optional>
 #include <set>
@@ -20,7 +20,9 @@ using namespace std;
 const uint32_t WINDOW_WIDTH = 800;
 const uint32_t WINDOW_HEIGHT = 600;
 
-const vector<const char *> VALIDATION_LAYERS = {"VK_LAYER_KHRONOS_validation"};
+const vector<const char *> REQUIRED_VALIDATION_LAYERS = {"VK_LAYER_KHRONOS_validation"};
+
+const vector<const char *> REQUIRED_DEVICE_EXTENSIONS = {VK_KHR_SWAPCHAIN_EXTENSION_NAME};
 
 #ifdef NDEBUG
 [[maybe_unused]] const bool ENABLE_VALIDATION_LAYERS = false;
@@ -45,6 +47,11 @@ class Vitamin {
     VkSurfaceKHR surface;
     VkQueue graphicsQueue;
     VkQueue presentQueue;
+    VkSwapchainKHR swapChain;
+    vector<VkImage> swapChainImages;
+    VkFormat swapChainImageFormat;
+    VkExtent2D swapChainExtent;
+    vector<VkImageView> swapChainImageViews;
 
     void initWindow() {
         glfwInit();
@@ -60,6 +67,8 @@ class Vitamin {
         createSurface();
         pickAndPrintPhysicalDevices();
         createLogicalDevice();
+        createSwapChain();
+        createImageViews();
     }
 
     void mainLoop() {
@@ -69,6 +78,10 @@ class Vitamin {
     }
 
     void cleanup() {
+        for (auto imageView : swapChainImageViews) {
+            vkDestroyImageView(logicalDevice, imageView, nullptr);
+        }
+        vkDestroySwapchainKHR(logicalDevice, swapChain, nullptr);
         vkDestroyDevice(logicalDevice, nullptr);
         vkDestroySurfaceKHR(instance, surface, nullptr);
         vkDestroyInstance(instance, nullptr);
@@ -95,9 +108,9 @@ class Vitamin {
                                         .ppEnabledExtensionNames = glfwExtensions};
 
         if (ENABLE_VALIDATION_LAYERS) {
-            if (checkAndPrintValidationLayerSupport(VALIDATION_LAYERS)) {
-                createInfo.enabledLayerCount = static_cast<uint32_t>(VALIDATION_LAYERS.size());
-                createInfo.ppEnabledLayerNames = VALIDATION_LAYERS.data();
+            if (checkAndPrintValidationLayerSupport(REQUIRED_VALIDATION_LAYERS)) {
+                createInfo.enabledLayerCount = static_cast<uint32_t>(REQUIRED_VALIDATION_LAYERS.size());
+                createInfo.ppEnabledLayerNames = REQUIRED_VALIDATION_LAYERS.data();
             } else {
                 throw runtime_error("Validation layers requested, but some are not available!");
             }
@@ -138,11 +151,19 @@ class Vitamin {
                 score += 1000;
             }
 
-            if (!queueFamilyIndices.isComplete()) {
-                score = -1;
-            }
             if (!deviceFeatures.geometryShader || !deviceFeatures.tessellationShader) {
-                score = -1;
+                score = -10;
+            }
+            if (!queueFamilyIndices.isComplete()) {
+                score = -20;
+            }
+            if (!checkDeviceExtensionSupport(device)) {
+                score = -30;
+            } else {
+                SwapChainSupportDetails swapChainSupport = querySwapChainSupport(device);
+                if (swapChainSupport.formats.empty() || swapChainSupport.presentModes.empty()) {
+                    score = -40;
+                }
             }
 
             devicePreferenceMap.insert(make_pair(score, make_tuple(device, deviceProperties, deviceFeatures)));
@@ -186,12 +207,13 @@ class Vitamin {
         VkDeviceCreateInfo createInfo{.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO,
                                       .queueCreateInfoCount = static_cast<uint32_t>(queueCreateInfos.size()),
                                       .pQueueCreateInfos = queueCreateInfos.data(),
-                                      .enabledExtensionCount = 0,
+                                      .enabledExtensionCount = static_cast<uint32_t>(REQUIRED_DEVICE_EXTENSIONS.size()),
+                                      .ppEnabledExtensionNames = REQUIRED_DEVICE_EXTENSIONS.data(),
                                       .pEnabledFeatures = &deviceFeatures};
 
         if (ENABLE_VALIDATION_LAYERS) {
-            createInfo.enabledLayerCount = static_cast<uint32_t>(VALIDATION_LAYERS.size());
-            createInfo.ppEnabledLayerNames = VALIDATION_LAYERS.data();
+            createInfo.enabledLayerCount = static_cast<uint32_t>(REQUIRED_VALIDATION_LAYERS.size());
+            createInfo.ppEnabledLayerNames = REQUIRED_VALIDATION_LAYERS.data();
         }
 
         if (vkCreateDevice(physicalDevice, &createInfo, nullptr, &logicalDevice) != VK_SUCCESS) {
@@ -297,9 +319,166 @@ class Vitamin {
         return indices;
     }
 
+    bool checkDeviceExtensionSupport(VkPhysicalDevice device) {
+        uint32_t extensionCount;
+        vkEnumerateDeviceExtensionProperties(device, nullptr, &extensionCount, nullptr);
+
+        vector<VkExtensionProperties> availableExtensions(extensionCount);
+        vkEnumerateDeviceExtensionProperties(device, nullptr, &extensionCount, availableExtensions.data());
+
+        set<string> requiredExtensions(REQUIRED_DEVICE_EXTENSIONS.begin(), REQUIRED_DEVICE_EXTENSIONS.end());
+
+        for (const auto &extension : availableExtensions) {
+            requiredExtensions.erase(extension.extensionName);
+        }
+
+        return requiredExtensions.empty();
+    }
+
     void createSurface() {
         if (glfwCreateWindowSurface(instance, window, nullptr, &surface) != VK_SUCCESS) {
             throw runtime_error("Failed to create window surface!");
+        }
+    }
+
+    struct SwapChainSupportDetails {
+        VkSurfaceCapabilitiesKHR capabilities;
+        vector<VkSurfaceFormatKHR> formats;
+        vector<VkPresentModeKHR> presentModes;
+    };
+
+    SwapChainSupportDetails querySwapChainSupport(VkPhysicalDevice device) {
+        SwapChainSupportDetails details;
+
+        vkGetPhysicalDeviceSurfaceCapabilitiesKHR(device, surface, &details.capabilities);
+
+        uint32_t formatCount;
+        vkGetPhysicalDeviceSurfaceFormatsKHR(device, surface, &formatCount, nullptr);
+
+        if (formatCount != 0) {
+            details.formats.resize(formatCount);
+            vkGetPhysicalDeviceSurfaceFormatsKHR(device, surface, &formatCount, details.formats.data());
+        }
+
+        uint32_t presentModeCount;
+        vkGetPhysicalDeviceSurfacePresentModesKHR(device, surface, &presentModeCount, nullptr);
+
+        if (presentModeCount != 0) {
+            details.presentModes.resize(presentModeCount);
+            vkGetPhysicalDeviceSurfacePresentModesKHR(device, surface, &presentModeCount, details.presentModes.data());
+        }
+
+        return details;
+    }
+
+    VkSurfaceFormatKHR chooseSwapSurfaceFormat(const vector<VkSurfaceFormatKHR> &availableFormats) {
+        for (const auto &availableFormat : availableFormats) {
+            if (availableFormat.format == VK_FORMAT_B8G8R8A8_SRGB && availableFormat.colorSpace == VK_COLOR_SPACE_SRGB_NONLINEAR_KHR) {
+                return availableFormat;
+            }
+        }
+
+        return availableFormats.front();
+    }
+
+    VkPresentModeKHR chooseSwapPresentMode(const vector<VkPresentModeKHR> &availablePresentModes) {
+        for (const auto &availablePresentMode : availablePresentModes) {
+            if (availablePresentMode == VK_PRESENT_MODE_MAILBOX_KHR) {
+                return availablePresentMode;
+            }
+        }
+
+        return VK_PRESENT_MODE_FIFO_KHR;
+    }
+
+    VkExtent2D chooseSwapExtent(const VkSurfaceCapabilitiesKHR &capabilities) {
+        if (capabilities.currentExtent.width != UINT32_MAX) {
+            return capabilities.currentExtent;
+        } else {
+            int width, height;
+            glfwGetFramebufferSize(window, &width, &height);
+
+            VkExtent2D actualExtent = {static_cast<uint32_t>(width), static_cast<uint32_t>(height)};
+
+            actualExtent.width = max(capabilities.minImageExtent.width, min(capabilities.maxImageExtent.width, actualExtent.width));
+            actualExtent.height = max(capabilities.minImageExtent.height, min(capabilities.maxImageExtent.height, actualExtent.height));
+
+            return actualExtent;
+        }
+    }
+
+    void createSwapChain() {
+        SwapChainSupportDetails swapChainSupport = querySwapChainSupport(physicalDevice);
+
+        VkSurfaceFormatKHR surfaceFormat = chooseSwapSurfaceFormat(swapChainSupport.formats);
+        VkPresentModeKHR presentMode = chooseSwapPresentMode(swapChainSupport.presentModes);
+        VkExtent2D extent = chooseSwapExtent(swapChainSupport.capabilities);
+
+        uint32_t minImageCount = swapChainSupport.capabilities.minImageCount + 1;
+
+        if (swapChainSupport.capabilities.maxImageCount > 0 && minImageCount > swapChainSupport.capabilities.maxImageCount) {
+            minImageCount = swapChainSupport.capabilities.maxImageCount;
+        }
+
+        VkSwapchainCreateInfoKHR createInfo{.sType = VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR,
+                                            .surface = surface,
+                                            .minImageCount = minImageCount,
+                                            .imageFormat = surfaceFormat.format,
+                                            .imageColorSpace = surfaceFormat.colorSpace,
+                                            .imageExtent = extent,
+                                            .imageArrayLayers = 1,
+                                            .imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT,
+                                            .preTransform = swapChainSupport.capabilities.currentTransform,
+                                            .compositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR,
+                                            .presentMode = presentMode,
+                                            .clipped = VK_TRUE,
+                                            .oldSwapchain = VK_NULL_HANDLE};
+
+        QueueFamilyIndices indices = findQueueFamilies(physicalDevice);
+        uint32_t queueFamilyIndices[] = {indices.graphicsFamily.value(), indices.presentFamily.value()};
+
+        if (indices.graphicsFamily != indices.presentFamily) {
+            createInfo.imageSharingMode = VK_SHARING_MODE_CONCURRENT;
+            createInfo.queueFamilyIndexCount = 2;
+            createInfo.pQueueFamilyIndices = queueFamilyIndices;
+        } else {
+            createInfo.imageSharingMode = VK_SHARING_MODE_EXCLUSIVE;
+            createInfo.queueFamilyIndexCount = 0;
+            createInfo.pQueueFamilyIndices = nullptr;
+        }
+
+        if (vkCreateSwapchainKHR(logicalDevice, &createInfo, nullptr, &swapChain) != VK_SUCCESS) {
+            throw runtime_error("Failed to create a swap chain!");
+        }
+
+        uint32_t imageCount;
+        vkGetSwapchainImagesKHR(logicalDevice, swapChain, &imageCount, nullptr);
+
+        swapChainImages.resize(imageCount);
+        vkGetSwapchainImagesKHR(logicalDevice, swapChain, &imageCount, swapChainImages.data());
+
+        swapChainImageFormat = surfaceFormat.format;
+        swapChainExtent = extent;
+    }
+
+    void createImageViews() {
+        swapChainImageViews.resize(swapChainImages.size());
+        for (size_t i = 0; i < swapChainImages.size(); i++) {
+            VkImageViewCreateInfo createInfo{
+                .sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
+                .image = swapChainImages[i],
+                .viewType = VK_IMAGE_VIEW_TYPE_2D,
+                .format = swapChainImageFormat,
+                .components = {.r = VK_COMPONENT_SWIZZLE_IDENTITY,
+                               .g = VK_COMPONENT_SWIZZLE_IDENTITY,
+                               .b = VK_COMPONENT_SWIZZLE_IDENTITY,
+                               .a = VK_COMPONENT_SWIZZLE_IDENTITY},
+                .subresourceRange = {
+                    .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT, .baseMipLevel = 0, .levelCount = 1, .baseArrayLayer = 0, .layerCount = 1}};
+
+            if (vkCreateImageView(logicalDevice, &createInfo, nullptr, &swapChainImageViews[i]) != VK_SUCCESS) {
+                throw std::runtime_error("Failed to create image views!");
+            }
         }
     }
 };
