@@ -6,6 +6,7 @@
 #include <cstdint>
 #include <cstdlib>
 #include <cstring>
+#include <fstream>
 #include <iostream>
 #include <iterator>
 #include <map>
@@ -29,6 +30,24 @@ const vector<const char *> REQUIRED_DEVICE_EXTENSIONS = {VK_KHR_SWAPCHAIN_EXTENS
 #else
 [[maybe_unused]] const bool ENABLE_VALIDATION_LAYERS = true;
 #endif
+
+static vector<char> readFile(const string &filename) {
+    ifstream file(filename, ios::ate | ios::binary);
+
+    if (!file.is_open()) {
+        throw runtime_error("failed to open file!");
+    }
+
+    size_t fileSize = (size_t)file.tellg();
+    vector<char> buffer(fileSize);
+
+    file.seekg(0);
+    file.read(buffer.data(), fileSize);
+
+    file.close();
+
+    return buffer;
+}
 
 class Vitamin {
   public:
@@ -69,6 +88,7 @@ class Vitamin {
         createLogicalDevice();
         createSwapChain();
         createImageViews();
+        createGraphicsPipeline();
     }
 
     void mainLoop() {
@@ -480,6 +500,42 @@ class Vitamin {
                 throw std::runtime_error("Failed to create image views!");
             }
         }
+    }
+
+    void createGraphicsPipeline() {
+        auto vertShaderCode = readFile("shaders/vert.spv");
+        auto fragShaderCode = readFile("shaders/frag.spv");
+
+        VkShaderModule vertShaderModule = createShaderModule(vertShaderCode);
+        VkShaderModule fragShaderModule = createShaderModule(fragShaderCode);
+
+        VkPipelineShaderStageCreateInfo vertShaderStageInfo{.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
+                                                            .stage = VK_SHADER_STAGE_VERTEX_BIT,
+                                                            .module = vertShaderModule,
+                                                            .pName = "main"};
+
+        VkPipelineShaderStageCreateInfo fragShaderStageInfo{.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
+                                                            .stage = VK_SHADER_STAGE_FRAGMENT_BIT,
+                                                            .module = fragShaderModule,
+                                                            .pName = "main"};
+
+        [[maybe_unused]] VkPipelineShaderStageCreateInfo shaderStages[] = {vertShaderStageInfo, fragShaderStageInfo};
+
+        vkDestroyShaderModule(logicalDevice, fragShaderModule, nullptr);
+        vkDestroyShaderModule(logicalDevice, vertShaderModule, nullptr);
+    }
+
+    VkShaderModule createShaderModule(const vector<char> &code) {
+        VkShaderModuleCreateInfo createInfo{.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO,
+                                            .codeSize = code.size(),
+                                            .pCode = reinterpret_cast<const uint32_t *>(code.data())};
+
+        VkShaderModule shaderModule;
+        if (vkCreateShaderModule(logicalDevice, &createInfo, nullptr, &shaderModule) != VK_SUCCESS) {
+            throw runtime_error("Failed to create shader module!");
+        }
+
+        return shaderModule;
     }
 };
 
